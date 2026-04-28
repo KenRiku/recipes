@@ -1,0 +1,27 @@
+// Append to your existing schema.prisma. Required schema additions:
+//   1. Add `stripeCustomerId String? @unique` to your User model.
+//   2. Add `subscription Subscription?` reverse relation to your User model.
+//   3. Append the Subscription model below.
+
+// One row per User; status drives `user.plan` (computed by lib/plan.ts →
+// 'paid' iff status in {active, trialing}).
+//
+// Idempotency: `lastEventId` is the last Stripe event applied to this row.
+// The webhook handler skips re-processing when an event with the same id
+// arrives twice (Stripe retries on 5xx).
+model Subscription {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String
+  stripeSubscriptionId String   @unique
+  stripePriceId        String
+  status               String   // active | trialing | past_due | canceled | unpaid | incomplete
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean  @default(false)
+  lastEventId          String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([stripeCustomerId])
+}
