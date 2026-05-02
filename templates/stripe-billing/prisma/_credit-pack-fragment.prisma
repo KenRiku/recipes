@@ -1,0 +1,26 @@
+// OPTIONAL — append only when shipping one-off credit packs alongside the
+// Subscription product. Required schema additions:
+//   1. Add `scanCredits Int @default(0)` to your User model (rename to
+//      whatever your unit of consumption is -- `messageCredits`,
+//      `apiCallCredits`, etc).
+//   2. Add `creditPurchases CreditPurchase[]` reverse relation.
+//   3. Append the CreditPurchase model below.
+//
+// Idempotency: the (stripeSessionId, stripeEventId) double-uniqueness lets
+// the webhook short-circuit duplicate event deliveries without a separate
+// "find then create" race. Stripe retries on transient 5xx; this guard
+// keeps credit grants exactly-once.
+
+model CreditPurchase {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSessionId String   @unique
+  stripeEventId   String   @unique
+  credits         Int
+  amountCents     Int
+  currency        String
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+}

@@ -17,6 +17,7 @@ Personal compounding-engineering archive. Lives outside any single project so ev
   > "Follow the dev-fallback pattern from `~/src/recipes/standards/dev-fallback-pattern.md`. Use the Stripe integration recipe at `~/src/recipes/recipes/stripe-integration.md`."
 - **When something breaks:** check `solutions/` for prior fixes before re-debugging.
 - **When something works:** capture the new gotcha into the relevant recipe / learning before context fades.
+- **`learnings/` is for adaptation notes** — when a recipe template runs into a stack-specific quirk (e.g. "the stripe-billing template on a custom JWT auth project"), write a short learnings file pointing back at the recipe + the project where the adaptation was verified. Keep the template generic; the learnings file holds the project-specific delta.
 
 ## Compounding rules
 

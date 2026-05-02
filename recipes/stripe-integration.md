@@ -19,10 +19,10 @@ A standardized recipe for adding Stripe subscriptions to a Next.js app. Captures
 
 ### Code surface (Next.js App Router)
 - `lib/stripe.ts` — `getStripe()` returns `Stripe` client or `null` if no key (dev fallback).
-- `app/api/billing/checkout/route.ts` — POST creates Checkout Session, returns hosted URL.
-- `app/api/webhooks/stripe/route.ts` — POST receives events, verifies signature, upserts subscription.
+- `app/api/billing/checkout/route.ts` — POST creates Checkout Session, returns hosted URL. Takes `mode: "subscription" | "credits"` (or your project's discriminator) when supporting both products.
+- `app/api/webhooks/stripe/route.ts` — POST receives events, verifies signature, branches on `session.mode` to upsert subscription OR grant credits.
 - `app/(app)/upgrade/page.tsx` — pricing table; calls checkout endpoint.
-- DB: `Subscription` table (userId, stripeCustomerId, stripeSubscriptionId, status, currentPeriodEnd, lastEventId for idempotency) + `User.stripeCustomerId`.
+- DB: `Subscription` table (userId, stripeCustomerId, stripeSubscriptionId, status, currentPeriodEnd, lastEventId for idempotency) + `User.stripeCustomerId`. **Optional**: `User.scanCredits` (int) + `CreditPurchase` audit table when shipping one-off credit packs alongside the subscription.
 
 ---
 
@@ -60,6 +60,10 @@ A standardized recipe for adding Stripe subscriptions to a Next.js app. Captures
 - **Webhook handler must be no-throw + idempotent.** Stripe retries on 5xx → duplicate writes. Always 200, log internally on failure. Track `lastEventId` per subscription row and short-circuit if seen.
 - **`current_period_end` moved to subscription items** in newer Stripe API versions. Read from `subscription.items.data[0].current_period_end` if top-level is undefined.
 - **Currency is set on the Price**, not in code. `Intl.NumberFormat` with the currency from `stripe.prices.retrieve()` handles display automatically.
+- **Custom JWT auth (no NextAuth) — adapt the template.** The template imports `getServerSession(authOptions)` everywhere. If your project uses a custom JWT cookie + `requireUser()` helper, swap every server-session call for `requireUser()` (which returns `{ id, email, name }` directly). Side effects: skip the "augment NextAuth session types" + "wire `getUserPlan` into session callback" steps from the template README — `getUserPlan(userId)` becomes a direct helper call inside the route or server component instead. *(Pattern verified in vibecheck, 2026-04-28.)*
+- **One-time credit purchases need `mode: "payment"`, not `"subscription"`.** `stripe.checkout.sessions.create({ mode: "payment", ... })` issues a single charge. The webhook then sees `session.mode === "payment"` on the same `checkout.session.completed` event — branch on it to credit a `User.scanCredits` field instead of upserting a Subscription. Pass `metadata.credits` on the session so the webhook knows how much to grant; idempotency keys to a separate `CreditPurchase` table uniquely indexed on `(stripeSessionId, stripeEventId)`.
+- **Mixing subscription + one-time payment on the same checkout endpoint** is fine. Take a `mode: "pro" | "credits"` discriminator on the request body, branch the Stripe `mode` and `line_items` accordingly. Both products share the same `customer`, the same metadata convention, and the same webhook — only the `Subscription` upsert vs `User.scanCredits` increment differs server-side.
+- **Pro subscribers should ignore credits.** A user who subscribes to Pro shouldn't have their credit balance silently consumed by gated scans. Plan-resolution logic: `if (plan === 'pro') skip credit lookup entirely`. Otherwise users on Pro who previously bought credits will see the balance drift weirdly.
 
 ---
 
@@ -70,6 +74,9 @@ A standardized recipe for adding Stripe subscriptions to a Next.js app. Captures
 - **Lazy customer creation**: create `stripe.customers.create()` only on first checkout, persist `stripeCustomerId` on User. Lets webhooks reverse-lookup user from customer ID.
 - **Pass `metadata: { userId }`** on both Checkout Session AND `subscription_data` so webhooks can resolve user without a customer-id lookup.
 - **Display real price on upgrade page** via server-side `stripe.prices.retrieve()` with short in-memory cache (5 min). Keeps marketing copy in sync with whatever you set in the dashboard.
+- **Atomic credit decrement.** When consuming a scan credit, use `prisma.user.updateMany({ where: { id, scanCredits: { gt: 0 } }, data: { scanCredits: { decrement: 1 } } })` and check `result.count > 0`. The where-clause guard prevents two concurrent scans from racing past zero. Spend the credit *after* the dependent row commits, so failed inserts don't burn balance.
+- **`CreditPurchase` audit table.** One row per scan-pack purchase keyed on `stripeSessionId @unique` and `stripeEventId @unique`. Lets you reconstruct credit balance from Stripe history if `User.scanCredits` ever drifts, and the dual-uniqueness gives webhook idempotency without a "find then create" race.
+- **Multi-axis plan resolution.** Real apps gate on more than just `plan === 'paid'`. Wrap the policy in an `assertCanX(userId)` that returns a verdict object explaining *which* of the available passes was used (subscription, credit, daily-cap, BYO). Caller handles the verdict (e.g. spend a credit when verdict says "credit"). Better than booleans for debug logs and for surfacing the right copy on the upgrade page (`?reason=scan_quota`).
 
 ---
 
