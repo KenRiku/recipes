@@ -9,13 +9,15 @@ For Prisma:
 ```json
 {
   "scripts": {
-    "build": "prisma db push --accept-data-loss --skip-generate && next build",
+    "build": "prisma db push --accept-data-loss && next build",
     "postinstall": "prisma generate"
   }
 }
 ```
 
-`prisma db push` is idempotent — running it on every deploy is safe. `--skip-generate` because `postinstall` already generated the client. `--accept-data-loss` is required because `db push` is conservative by default; for additive-only schema work it's a no-op.
+`prisma db push` is idempotent — running it on every deploy is safe. `--accept-data-loss` is required because `db push` is conservative by default; for additive-only schema work it's a no-op.
+
+> **Prisma 7 note:** the `--skip-generate` flag was removed in Prisma 7 (`prisma db push` no longer accepts it and fails with `unknown or unexpected option: --skip-generate`). The `postinstall: prisma generate` script still handles client generation independently, so dropping the flag is the right answer — not pinning to Prisma 6.
 
 For other ORMs:
 - **Drizzle**: `drizzle-kit push` in build.

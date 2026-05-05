@@ -53,7 +53,7 @@
    ```
 5. `package.json` — **schema must sync on every deploy** (see `standards/schema-sync-on-deploy.md`):
    - `"postinstall": "prisma generate"` — Vercel runs this, generates client during build.
-   - `"build": "prisma db push --accept-data-loss --skip-generate && next build"` — pushes schema before building. (Use `prisma migrate deploy` instead if you've adopted versioned migrations.)
+   - `"build": "prisma db push --accept-data-loss && next build"` — pushes schema before building. (Use `prisma migrate deploy` instead if you've adopted versioned migrations.) Prisma 7 removed `--skip-generate`; don't add it — `postinstall` already runs `prisma generate`.
    - **Never rely on manually running `prisma db push` after deploy.** The failure mode is `P2022: column "(not available)" does not exist` on the first prod request, and it bites every project until the build script does this automatically.
 
 ## Test the flow
