@@ -16,6 +16,7 @@
 | `LINEAR_TEAM_ID` | yes | UUID of the team to file issues in |
 | `LINEAR_PROJECT_ID` | optional | Pin all submissions to a single project |
 | `LINEAR_LABEL_BUG` / `LINEAR_LABEL_FEEDBACK` / `LINEAR_LABEL_FEATURE` | optional | Per-type label IDs |
+| `DISCORD_WEBHOOK_URL` | optional | Incoming-webhook URL for a Discord channel; posts `title + link` after a successful `issueCreate` |
 
 ### Code surface
 - `app/api/feedback/route.ts` — accepts widget POSTs, calls Linear GraphQL `issueCreate`. Follows [`dev-fallback-pattern`](../standards/dev-fallback-pattern.md): when env vars missing, returns 503 with friendly copy instead of dropping silently.
@@ -47,6 +48,7 @@ Reference: `arotaro.ai/api/feedback.js` (plain CommonJS Vercel function; shipped
 - **Spam defense for a public route**: hidden honeypot field (accept-and-drop with 200 so bots learn nothing) + best-effort per-warm-instance in-memory rate limit. Fine for contact-form threat model; don't over-engineer.
 - **Category → label mapping is lossy by design**: map form categories onto existing team labels, leave the unmappable ones unlabeled, and always write the raw category into the issue body so nothing is lost. Frontend must send the raw i18n key, not the translated label.
 - **Attachments** via the `fileUpload` mutation (get presigned URL → PUT bytes → embed `assetUrl` in the description as a markdown link). Make it best-effort: losing the issue over an attachment glitch is worse than losing the attachment. Record the filename in the body even when the upload fails.
+- **Discord notification on success** (optional): after `issueCreate` succeeds, `await` a plain `fetch` POST to a Discord incoming-webhook URL with `{ content: "<title>\n<url>" }` — no Discord SDK, no LLM-composed message, just the two facts you already have. Gate on an optional env var (`DISCORD_WEBHOOK_URL_<TENANT>`); missing var means silent no-op, not a 503 (Discord isn't required for the form to work). Wrap the call in `.catch()` so a Discord outage never turns a successful Linear submission into an error response to the user. Must `await` it (not fire-and-forget) since serverless functions can be frozen right after the response is sent.
 
 ## Gotchas
 
